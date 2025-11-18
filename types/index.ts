@@ -1,50 +1,36 @@
-export interface Transaction {
-  id: number;
+// New extraction interface aligned with system.txt schema (camelCase keys)
+// All fields are nullable strings; subdivisionNumber intentionally excluded.
+export interface ExtractedTransaction {
   surveyNumber: string | null;
-  district: string | null;
   documentNumber: string | null;
+  documentYear: string | null;
   registrationDate: string | null;
   executionDate: string | null;
-  buyerNameTamil: string | null;
-  buyerNameEnglish: string | null;
-  sellerNameTamil: string | null;
-  sellerNameEnglish: string | null;
+  transactionType: string | null;
+  executant: string | null; // Tamil sellers combined
+  claimant: string | null; // Tamil buyers combined
   houseNumber: string | null;
-  propertyDescriptionTamil: string | null;
-  propertyDescriptionEnglish: string | null;
+  propertyDescription: string | null;
   propertyValue: string | null;
-  village: string | null;
-  taluk: string | null;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-  pdfSource: string | null;
 }
 
-export interface TransactionFilter {
-  buyerName?: string;
-  sellerName?: string;
-  surveyNumber?: string;
-  documentNumber?: string;
-  houseNumber?: string;
-  district?: string;
-  startDate?: string;
-  endDate?: string;
-}
+// After translation we still keep same shape (English text where applicable)
+export type TranslatedTransaction = ExtractedTransaction;
 
-export interface ParsedTransaction {
-  surveyNumber?: string;
-  district?: string;
-  documentNumber?: string;
-  registrationDate?: string;
-  executionDate?: string;
-  buyerNameTamil?: string;
-  sellerNameTamil?: string;
-  houseNumber?: string;
-  propertyDescriptionTamil?: string;
-  propertyValue?: string;
-  village?: string;
-  taluk?: string;
-}
+// Mapping of camelCase to snake_case DB columns
+export const TRANSACTION_DB_COLUMN_MAP: Record<keyof ExtractedTransaction, string> = {
+  surveyNumber: "survey_number",
+  documentNumber: "document_number",
+  documentYear: "document_year",
+  registrationDate: "registration_date",
+  executionDate: "execution_date",
+  transactionType: "transaction_type",
+  executant: "executant",
+  claimant: "claimant",
+  houseNumber: "house_number",
+  propertyDescription: "property_description",
+  propertyValue: "property_value"
+};
 
 export interface User {
   username: string;

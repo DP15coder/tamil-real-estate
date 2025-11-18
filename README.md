@@ -138,13 +138,13 @@ npm install
 1. Create a PostgreSQL database:
 
 ```bash
-createdb tamil_transactions
+createdb transactions
 ```
 
 2. Run the schema SQL file:
 
 ```bash
-psql -d tamil_transactions -f schema.sql
+psql -d transactions -f schema.sql
 ```
 
 Or manually create the database and run the SQL commands from `schema.sql`.

@@ -3,9 +3,10 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { get_current_user } from "@/lib/auth";
 import { extract_transactions_from_pdf } from "@/lib/pdf/gemini-parser";
-import { translate_transaction_fields } from "@/lib/translation/translator";
+import { translate_extracted_transactions } from "@/lib/translation/openai-translator";
 import { db } from "@/lib/db/client";
 import { transactions } from "@/lib/db/schema";
+import { TRANSACTION_DB_COLUMN_MAP, ExtractedTransaction } from "@/types";
 
 const UPLOAD_DIR = join(process.cwd(), "public", "uploads");
 
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     const filepath = join(UPLOAD_DIR, filename);
     await writeFile(filepath, buffer);
     
-    // Extract transactions from PDF
+    // 1) Extract (Tamil, raw)
     const parsedTransactions = await extract_transactions_from_pdf(buffer);
     
     if (parsedTransactions.length === 0) {
@@ -64,14 +65,8 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Filter out incomplete transactions
-    // Must have: documentNumber AND (buyerNameTamil OR sellerNameTamil)
-    const validTransactions = parsedTransactions.filter(t => {
-      const hasDocNumber = t.documentNumber && t.documentNumber.trim() !== "";
-      const hasBuyer = t.buyerNameTamil && t.buyerNameTamil.trim() !== "";
-      const hasSeller = t.sellerNameTamil && t.sellerNameTamil.trim() !== "";
-      return hasDocNumber && (hasBuyer || hasSeller);
-    });
+    // 2) Basic validation filter: require documentNumber
+    const validTransactions = parsedTransactions.filter(t => t.documentNumber && t.documentNumber.trim() !== "");
     
     console.log(`\n📊 Filtered: ${parsedTransactions.length} → ${validTransactions.length} valid transactions\n`);
     
@@ -82,29 +77,18 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Translate and save transactions
-    const savedTransactions = [];
-    
-    for (const transaction of validTransactions) {
-      // Translate Tamil fields to English
-      const translatedTransaction = await translate_transaction_fields(transaction);
-      
-      // Clean up data before insertion
-      const cleanedData: any = {
-        ...translatedTransaction,
-        pdfSource: filename,
-        // Convert empty strings to null for numeric fields
-        propertyValue: translatedTransaction.propertyValue && translatedTransaction.propertyValue.trim() !== "" 
-          ? translatedTransaction.propertyValue 
-          : null,
-      };
-      
-      // Insert into database
-      const [saved] = await db
-        .insert(transactions)
-        .values(cleanedData)
-        .returning();
-      
+    // 3) Translate batch to English (returns same shape)
+    const translated = await translate_extracted_transactions(validTransactions);
+
+    // 4) Map & insert
+    const savedTransactions: any[] = [];
+    for (const tx of translated) {
+      const row: Record<string, any> = { pdfSource: filename };
+      (Object.keys(TRANSACTION_DB_COLUMN_MAP) as (keyof ExtractedTransaction)[]).forEach(key => {
+        const column = TRANSACTION_DB_COLUMN_MAP[key];
+        row[column] = tx[key];
+      });
+      const [saved] = await db.insert(transactions).values(row).returning();
       savedTransactions.push(saved);
     }
     
