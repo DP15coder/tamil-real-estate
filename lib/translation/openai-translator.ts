@@ -1,6 +1,8 @@
-import OpenAI from "openai";
 import Ajv from "ajv";
 import type { ExtractedTransaction, TranslatedTransaction } from "@/types";
+import { generate } from "@/lib/llm";
+import { extractJson } from "../utils";
+
 
 const ajv = new Ajv({ allErrors: true });
 const schema = {
@@ -18,80 +20,56 @@ const schema = {
 };
 const validate = ajv.compile(schema as any);
 
-export async function translate_extracted_transactions(rows: ExtractedTransaction[]): Promise<TranslatedTransaction[]> {
-    console.log("\n========== 🌐 TRANSLATION STARTED ==========");
-    console.log(`📝 Translating ${rows.length} transactions...`);
-    
-    if (rows.length === 0) return [];
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY missing for translation");
+function buildSystemPrompt(single: ExtractedTransaction) {
+    return `You are a precise Tamil to English translation assistant for Encumbrance Certificate transactions. Translate ONLY Tamil human-readable text in these fields: executant, claimant, transactionType, houseNumber, propertyDescription. Keep other fields EXACTLY unchanged: surveyNumber, documentNumber, documentYear, registrationDate, executionDate, propertyValue. Preserve nulls, strings (including numeric/date strings) verbatim if not one of the translatable fields. Return ONLY a JSON object of identical shape with the translated fields.`;
+}
 
-    // Provide compact JSON to model
-    const inputJson = JSON.stringify(rows);
-    console.log(`📄 Input JSON length: ${inputJson.length} characters`);
-    
-    const prompt = `You are a translation assistant. Given a JSON array of Tamil Encumbrance Certificate transaction objects (keys are schema-defined), return the SAME JSON array with all Tamil textual content translated to English. Preserve keys, ordering, nulls, numeric strings and date strings EXACTLY. Only translate human Tamil text in fields: executant, claimant, transactionType, houseNumber, propertyDescription. If a field is null keep it null. Do NOT modify surveyNumber/documentNumber/documentYear if they look like identifiers. Output ONLY the JSON array.`;
+// Helper: parse & normalize a model response for one row
+function parseSingleRow(raw: string, original: ExtractedTransaction, index: number): TranslatedTransaction {
+    raw = raw.trim();
+    // let parsed: any;
+    const parsed: any = extractJson(raw)
 
-    console.log("🤖 Calling OpenAI for translation...");
-    const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-            { role: "system", content: prompt },
-            { role: "user", content: inputJson }
-        ],
-        temperature: 0,
-        response_format: { type: "json_object" }
-    });
-
-    console.log("✅ Translation API call completed");
-    const raw = completion.choices[0].message.content?.trim() || "";
-    console.log("📝 Translation response (first 500 chars):", raw.substring(0, 500));
-    
-    let parsed: any;
-    try { 
-        parsed = JSON.parse(raw); 
-    } catch (e) { 
-        throw new Error("Translator returned invalid JSON: " + (e as Error).message); 
-    }
-    
-    // Extract array from various possible response formats
-    let arr: any[] = [];
-    if (Array.isArray(parsed)) {
-        arr = parsed;
-    } else if (parsed.transactions && Array.isArray(parsed.transactions)) {
-        arr = parsed.transactions;
-    } else if (parsed.data && Array.isArray(parsed.data)) {
-        arr = parsed.data;
-    } else {
-        // Try to find any array in the object
-        const keys = Object.keys(parsed);
-        for (const key of keys) {
-            if (Array.isArray(parsed[key])) {
-                arr = parsed[key];
-                break;
-            }
+    const requiredKeys = [
+        "surveyNumber", "documentNumber", "documentYear", "registrationDate", "executionDate", "transactionType", "executant", "claimant", "houseNumber", "propertyDescription", "propertyValue"
+    ] as const;
+    for (const k of requiredKeys) {
+        if (!(k in parsed)) {
+            // If translation omitted a non-translated field, reinsert original
+            parsed[k] = (original as any)[k] ?? null;
         }
     }
-    
-    console.log(`📊 Translation: Input ${rows.length} rows, Output ${arr.length} rows`);
-    
-    if (!Array.isArray(arr)) {
-        throw new Error("Translator output is not an array. Keys: " + Object.keys(parsed).join(", "));
-    }
-    
-    if (arr.length !== rows.length) {
-        console.warn(`⚠️ Array size mismatch: Expected ${rows.length}, got ${arr.length}`);
-        console.log("Input sample:", JSON.stringify(rows[0], null, 2));
-        console.log("Output sample:", JSON.stringify(arr[0], null, 2));
-        throw new Error(`Translator output array size mismatch: expected ${rows.length}, got ${arr.length}`);
-    }
-    
-    if (!validate(arr)) {
+    return parsed as TranslatedTransaction;
+}
+
+// Translate a single row using generate()
+async function translateRow(row: ExtractedTransaction, index: number, total: number): Promise<TranslatedTransaction> {
+    console.log(`🔄 Translating row ${index + 1}/${total}`);
+    const system = buildSystemPrompt(row);
+    const userContent = JSON.stringify(row);
+    const response = await generate([
+        { role: "system", content: system },
+        { role: "user", content: userContent }
+    ]);
+
+    console.log(`📝 Row ${index + 1} response (first 200 chars): ${response.substring(0, 200)}`);
+    return parseSingleRow(response, row, index);
+}
+
+export async function translate_extracted_transactions(rows: ExtractedTransaction[]): Promise<TranslatedTransaction[]> {
+    console.log("\n========== 🌐 TRANSLATION STARTED ==========");
+    console.log(`📝 Translating ${rows.length} transactions individually...`);
+    if (rows.length === 0) return [];
+
+    // Parallel translation preserving order (Promise.all keeps order of input array)
+    const translated = await Promise.all(rows.map((r, i) => translateRow(r, i, rows.length)));
+
+    // Validate whole array shape after translations
+    if (!validate(translated)) {
         throw new Error("Translated output failed schema validation: " + ajv.errorsText(validate.errors));
     }
-    
-    console.log("✅ Translation validation passed");
+
+    console.log("✅ All rows validated successfully");
     console.log("========== 🌐 TRANSLATION COMPLETED ==========\n");
-    return arr as TranslatedTransaction[];
+    return translated;
 }

@@ -1,10 +1,12 @@
-import OpenAI from "openai";
 import pdf from "pdf-parse";
 import { readFileSync } from "fs";
 import path from "path";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import type { ExtractedTransaction } from "@/types";
+import { generate } from "../llm";
+import { extractJson } from "../utils";
+
 
 // JSON Schema for validation
 const transactionSchema = {
@@ -72,45 +74,21 @@ export async function extract_transactions_from_pdf(buffer: Buffer): Promise<Ext
         { role: "system", content: systemInstructions },
         { role: "user", content: userContent }
     ]);
-    console.log(raw);
-    if (!raw) throw new Error("Empty response from LLM");
 
-    let parsed: any;
-    try {
-        parsed = JSON.parse(raw);
-    } catch (e) {
-        throw new Error("LLM response was not valid JSON: " + (e as Error).message);
-    }
+    const parsed: any[] = extractJson(raw);
 
     // Expect top-level array due to json_schema response format
     if (!Array.isArray(parsed)) {
         throw new Error("LLM response was not a top-level JSON array as expected");
     }
-    const arr: any[] = parsed;
 
-    if (!validateTransactionArray(arr)) {
+    if (!validateTransactionArray(parsed)) {
         throw new Error("Extraction JSON schema validation failed: " + ajv.errorsText(validateTransactionArray.errors));
     }
 
-    const casted = arr as ExtractedTransaction[];
+    const casted = parsed as ExtractedTransaction[];
     console.log(`✅ Extracted ${casted.length} transaction rows`);
     console.log("========== ✅ LLM EXTRACTION COMPLETED ==========");
     return casted;
 }
 
-// Generic LLM generate function: takes chat messages and returns assistant output string
-export async function generate(messages: { role: 'system' | 'user' | 'assistant'; content: string }[]): Promise<string> {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OPENAI_API_KEY missing: cannot call LLM");
-    const openai = new OpenAI({ apiKey });
-    console.log("Calling OpenAI API............")
-
-    const completion = await openai.chat.completions.create({
-        model: "gpt-5-mini",
-        messages,
-        reasoning_effort: "low",
-    });
-
-    console.log("OpenAI API Completed............")
-    return completion.choices[0].message.content?.trim() || "";
-}
