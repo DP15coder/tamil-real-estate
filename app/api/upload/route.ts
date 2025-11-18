@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { get_current_user } from "@/lib/auth";
-import { extract_transactions_from_pdf } from "@/lib/pdf/parser";
+import { extract_transactions_from_pdf } from "@/lib/pdf/gemini-parser";
 import { translate_transaction_fields } from "@/lib/translation/translator";
 import { db } from "@/lib/db/client";
 import { transactions } from "@/lib/db/schema";
@@ -64,20 +64,45 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Filter out incomplete transactions
+    // Must have: documentNumber AND (buyerNameTamil OR sellerNameTamil)
+    const validTransactions = parsedTransactions.filter(t => {
+      const hasDocNumber = t.documentNumber && t.documentNumber.trim() !== "";
+      const hasBuyer = t.buyerNameTamil && t.buyerNameTamil.trim() !== "";
+      const hasSeller = t.sellerNameTamil && t.sellerNameTamil.trim() !== "";
+      return hasDocNumber && (hasBuyer || hasSeller);
+    });
+    
+    console.log(`\n📊 Filtered: ${parsedTransactions.length} → ${validTransactions.length} valid transactions\n`);
+    
+    if (validTransactions.length === 0) {
+      return NextResponse.json(
+        { error: "No valid transactions found in PDF" },
+        { status: 400 }
+      );
+    }
+    
     // Translate and save transactions
     const savedTransactions = [];
     
-    for (const transaction of parsedTransactions) {
+    for (const transaction of validTransactions) {
       // Translate Tamil fields to English
       const translatedTransaction = await translate_transaction_fields(transaction);
+      
+      // Clean up data before insertion
+      const cleanedData: any = {
+        ...translatedTransaction,
+        pdfSource: filename,
+        // Convert empty strings to null for numeric fields
+        propertyValue: translatedTransaction.propertyValue && translatedTransaction.propertyValue.trim() !== "" 
+          ? translatedTransaction.propertyValue 
+          : null,
+      };
       
       // Insert into database
       const [saved] = await db
         .insert(transactions)
-        .values({
-          ...translatedTransaction,
-          pdfSource: filename,
-        })
+        .values(cleanedData)
         .returning();
       
       savedTransactions.push(saved);

@@ -50,17 +50,35 @@ export async function translate_tamil_to_english(text: string): Promise<string> 
     return "";
   }
   
+  console.log(`\n🔤 Translating: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+  
   // Try Google Translate API if key is available
   if (process.env.GOOGLE_TRANSLATE_API_KEY) {
     try {
-      return await _translate_with_google(text);
+      console.log("   → Using Google Translate API");
+      const result = await _translate_with_google(text);
+      console.log(`   ✅ Result: "${result}"`);
+      return result;
     } catch (error) {
-      console.error("Google Translate failed, falling back to manual:", error);
+      console.error("   ❌ Google Translate failed, falling back to MyMemory:", error);
     }
   }
   
+  // Try MyMemory free API
+  try {
+    console.log("   → Using MyMemory API");
+    const result = await _translate_with_mymemory(text);
+    console.log(`   ✅ Result: "${result}"`);
+    return result;
+  } catch (error) {
+    console.error("   ❌ MyMemory Translate failed, falling back to manual:", error);
+  }
+  
   // Fallback to manual translation
-  return _translate_manually(text);
+  console.log("   → Using Manual Translation");
+  const result = _translate_manually(text);
+  console.log(`   ✅ Result: "${result}"`);
+  return result;
 }
 
 /**
@@ -82,6 +100,36 @@ async function _translate_with_google(text: string): Promise<string> {
   
   const [translation] = await translate.translate(text, "en");
   return translation;
+}
+
+/**
+ """
+ Translates text using MyMemory free API.
+ Free API with 10,000 characters/day limit.
+ 
+ Args:
+     text: Text to translate from Tamil to English
+     
+ Returns:
+     Translated text
+ """
+ */
+async function _translate_with_mymemory(text: string): Promise<string> {
+  const encodedText = encodeURIComponent(text);
+  const url = `https://api.mymemory.translated.net/get?q=${encodedText}&langpair=ta|en`;
+  const response = await fetch(url);
+  
+  if (!response.ok) {
+    throw new Error(`MyMemory API error: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  
+  if (data.responseStatus !== 200) {
+    throw new Error(`MyMemory API error: ${data.responseDetails}`);
+  }
+  
+  return data.responseData.translatedText || text;
 }
 
 /**
@@ -195,6 +243,9 @@ export async function batch_translate(texts: string[]): Promise<string[]> {
  """
  */
 export async function translate_transaction_fields(transaction: any): Promise<any> {
+  console.log("\n========== TRANSLATION STARTED ==========");
+  console.log("Original Transaction:", JSON.stringify(transaction, null, 2));
+  
   const fieldsToTranslate = [
     { tamil: "buyerNameTamil", english: "buyerNameEnglish" },
     { tamil: "sellerNameTamil", english: "sellerNameEnglish" },
@@ -208,11 +259,17 @@ export async function translate_transaction_fields(transaction: any): Promise<an
   
   for (const field of fieldsToTranslate) {
     if (transaction[field.tamil]) {
+      console.log(`\n📝 Translating field: ${field.tamil} → ${field.english}`);
       translatedTransaction[field.english] = await translate_tamil_to_english(
         transaction[field.tamil]
       );
+    } else {
+      console.log(`⚠️  Field ${field.tamil} is empty/missing`);
     }
   }
+  
+  console.log("\nTranslated Transaction:", JSON.stringify(translatedTransaction, null, 2));
+  console.log("========== TRANSLATION COMPLETED ==========\n");
   
   return translatedTransaction;
 }

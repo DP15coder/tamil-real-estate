@@ -131,11 +131,11 @@ export default function UploadPage() {
                   id="file-upload"
                   disabled={uploading}
                 />
-                <label htmlFor="file-upload">
-                  <Button variant="outline" size="sm" asChild>
-                    <span>Browse Files</span>
-                  </Button>
-                </label>
+                <Button variant="outline" size="sm" asChild>
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    Browse Files
+                  </label>
+                </Button>
               </div>
             )}
           </div>
