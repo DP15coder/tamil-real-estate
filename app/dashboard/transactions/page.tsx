@@ -33,6 +33,7 @@ export default function TransactionsPage() {
 
       if (response.ok) {
         setTransactions(data.transactions);
+        console.log(data.transactions,"what is inside transactiosn")
       }
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
@@ -55,8 +56,8 @@ export default function TransactionsPage() {
 
   function handleReset() {
     setFilters({
-      buyerName: "",
-      sellerName: "",
+      executant: "",
+      claimant: "",
       surveyNumber: "",
       documentNumber: "",
       district: "",
@@ -80,7 +81,7 @@ export default function TransactionsPage() {
               <label className="text-sm font-medium mb-2 block">Buyer Name</label>
               <Input
                 placeholder="Search buyer name..."
-                value={filters.buyerName}
+                value={filters.executant}
                 onChange={(e) => handleFilterChange("buyerName", e.target.value)}
               />
             </div>
@@ -88,7 +89,7 @@ export default function TransactionsPage() {
               <label className="text-sm font-medium mb-2 block">Seller Name</label>
               <Input
                 placeholder="Search seller name..."
-                value={filters.sellerName}
+                value={filters.claimant}
                 onChange={(e) => handleFilterChange("sellerName", e.target.value)}
               />
             </div>
@@ -152,10 +153,10 @@ export default function TransactionsPage() {
                   <TableRow>
                     <TableHead>Doc #</TableHead>
                     <TableHead>Survey #</TableHead>
-                    <TableHead>Buyer</TableHead>
-                    <TableHead>Seller</TableHead>
-                    <TableHead>District</TableHead>
-                    <TableHead>Village</TableHead>
+                    <TableHead>Claimant (Buyer)</TableHead>
+                    <TableHead>Executant (Seller)</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>House #</TableHead>
                     <TableHead>Reg. Date</TableHead>
                     <TableHead>Value</TableHead>
                   </TableRow>
@@ -172,30 +173,24 @@ export default function TransactionsPage() {
                       <TableCell>
                         <div className="max-w-[200px]">
                           <p className="font-medium truncate">
-                            {transaction.buyerNameEnglish || "N/A"}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {transaction.buyerNameTamil}
+                            {transaction.claimant || "N/A"}
                           </p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="max-w-[200px]">
                           <p className="font-medium truncate">
-                            {transaction.sellerNameEnglish || "N/A"}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {transaction.sellerNameTamil}
+                            {transaction.executant || "N/A"}
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{transaction.district || "N/A"}</TableCell>
-                      <TableCell>{transaction.village || "N/A"}</TableCell>
+                      <TableCell>{transaction.transactionType || "N/A"}</TableCell>
+                      <TableCell>{transaction.houseNumber || "N/A"}</TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {formatDate(transaction.registrationDate)}
+                        {transaction.registrationDate || "N/A"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {formatCurrency(transaction.propertyValue)}
+                        {transaction.propertyValue || "N/A"}
                       </TableCell>
                     </TableRow>
                   ))}
